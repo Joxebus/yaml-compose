@@ -1,0 +1,93 @@
+#!/usr/bin/env groovy
+
+/*
+/   Copyright 2020 Jorge Omar Bautista Valenzuela
+/
+/   Licensed under the Apache License, Version 2.0 (the "License");
+/   you may not use this file except in compliance with the License.
+/   You may obtain a copy of the License at
+/
+/       http://www.apache.org/licenses/LICENSE-2.0
+/
+/   Unless required by applicable law or agreed to in writing, software
+/   distributed under the License is distributed on an "AS IS" BASIS,
+/   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+/   See the License for the specific language governing permissions and
+/   limitations under the License.
+*/
+
+
+import groovy.cli.commons.CliBuilder
+
+def isYamlFile = { String filename ->
+    String extension = filename.substring(filename.lastIndexOf('.')+1)
+    return extension in ['yaml', 'yml']
+}
+
+def readFileWithSpaces = { String filepath, String spaces ->
+    StringBuilder builder = new StringBuilder()
+    File file = new File(filepath)
+    if(!file.exists()) {
+        throw new RuntimeException("File [$filepath] does not exists")
+    }
+    file.text.eachLine { line->
+        builder.append(spaces)
+                .append(line)
+                .append('\n')
+    }
+    builder.toString()
+}
+
+def cli = new CliBuilder(usage: 'yaml-compose -[hvoi]')
+
+String version = '0.0.1'
+
+cli.with { // (1)
+    h(longOpt: 'help', 'Usage Information \n', required: false)
+    v(longOpt: 'version','shows the version of the script', required: false)
+    i(convert: { new File(it) }, longOpt: 'input','name of the yaml file to process [required]', required: false)
+    o(convert: { new File(it) }, longOpt: 'output','output filename by default output.yml', required: false)
+}
+
+def options = cli.parse(args)
+
+if (options.v) { // (2)
+    println "yaml-compose version $version"
+    return
+}
+
+if (options.h) { // (3)
+    cli.usage()
+    return
+}
+
+if(!options.i || !isYamlFile(options.i.name)) {
+    println "You need to provide a valid YAML file path"
+    cli.usage()
+    return
+}
+
+File inputFile = options.i
+File outputFile = options.o ?: new File('output.yml')
+
+try {
+    println("Start processing ${inputFile.name} into ${outputFile.name}")
+    outputFile.withWriter('utf-8') { writer ->
+        inputFile.eachLine { line ->
+            if (line.contains('$include')) {
+                int includeIndex = line.indexOf('$include')
+                int filenameIndex = line.indexOf(':') + 1
+                String spaces = line.substring(0, includeIndex)
+                String fileName = line.substring(filenameIndex).trim()
+                String append = readFileWithSpaces(fileName, spaces)
+                writer.writeLine(append)
+            } else {
+                writer.writeLine(line)
+            }
+        }
+    }
+    println("Finish processing file, results are in: ${outputFile.absolutePath}")
+} catch(RuntimeException e){
+    e.printStackTrace()
+    outputFile.delete()
+}
