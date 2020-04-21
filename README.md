@@ -64,11 +64,12 @@ To see some more complex sample look at `sample` folder.
 ```
 > yaml-compose -h
 
-usage: yaml-compose -[hvio]
+usage: yaml-compose -[hvroi]
  -h,--help           Usage Information
                      
  -i,--input <arg>    name of the yaml file to process [required]
  -o,--output <arg>   output filename by default output.yml
+ -r,--recursive      recursively look in the other files for inclusions
  -v,--version        shows the version of the script
 
 ```

@@ -15,43 +15,52 @@
 /   See the License for the specific language governing permissions and
 /   limitations under the License.
 */
-String version = '0.1.0'
-
-// CLI Commands definition
 import groovy.cli.commons.CliBuilder
 
-class YamlUtil {
+def env = System.getenv()
+final String BIN_FOLDER = env['YAML_COMPOSE_DIR']+File.separator+'bin'
+final String VERSION = '0.3.0'
+System.setProperty('YAML_COMPOSE_VERSION', VERSION)
+System.setProperty('YAML_COMPOSE_BIN', BIN_FOLDER)
+
+class YamlProcessor {
+    File inputFile
+    File outputFile
+
     boolean recursive = false
     String delimiter = '$include'
+    String parent
 
-    def readSpaces = { String line ->
+    def readSpaces = { line ->
         int includeIndex = line.indexOf(delimiter)
         line.substring(0, includeIndex)
     }
 
-    def containsDelimiter = { String line ->
+    def containsDelimiter = { line ->
         line.contains(delimiter)
     }
 
-    def readFileName = { String line ->
+    def readFileName = { line ->
         int filenameIndex = line.indexOf(':') + 1
         line.substring(filenameIndex).trim()
     }
 
-    def isYamlFile = { String filename ->
+    def isYamlFile = { filename ->
         String extension = filename.substring(filename.lastIndexOf('.')+1)
         extension in ['yaml', 'yml']
     }
 
-    def readFileWithSpaces = { String filepath, String spaces ->
+    def readFileWithSpaces = { filepath, spaces ->
         StringBuilder builder = new StringBuilder()
-        File file = new File(filepath)
-        if(!file.exists()) {
-            throw new RuntimeException("File [$filepath] does not exists")
+        File file = new File(parent, filepath)
+        println("Processing file: ${file.absolutePath}")
+        if(!file.exists() || file.isDirectory()) {
+            throw new RuntimeException("Invalid filepath: [$filepath].")
         }
+
         file.text.eachLine { String line ->
             if(recursive && containsDelimiter(line)) {
-                extractIncludeContent(spaces.concat(line))
+                builder.append(extractIncludeContent(spaces.concat(line)))
             } else {
                 builder.append(spaces)
                         .append(line)
@@ -61,7 +70,7 @@ class YamlUtil {
         builder.toString()
     }
 
-    def extractIncludeContent = { String line ->
+    def extractIncludeContent = { line ->
         if (containsDelimiter(line)) {
             String spaces = readSpaces(line)
             String fileName = readFileName(line)
@@ -70,8 +79,25 @@ class YamlUtil {
             line
         }
     }
+
+    void start() {
+        try {
+            println("Start processing ${inputFile.name} into ${outputFile.name}")
+            outputFile.withWriter('utf-8') { writer ->
+                inputFile.eachLine { line ->
+                    writer.writeLine(extractIncludeContent(line))
+                }
+            }
+            println("Finish processing file, results are in: ${outputFile.absolutePath}")
+        } catch(RuntimeException e){
+            e.printStackTrace()
+            outputFile.delete()
+        }
+    }
 }
 
+def yamlProcessor = new YamlProcessor()
+// CLI Commands definition
 def cli = new CliBuilder(usage: 'yaml-compose -[hvroi]')
 
 cli.with {
@@ -85,10 +111,8 @@ cli.with {
 // Read the input from console
 def options = cli.parse(args)
 
-YamlUtil yamlUtil = new YamlUtil(recursive: options.r)
-
 if (options.v) {
-    println "yaml-compose version $version"
+    println "yaml-compose version $VERSION"
     return
 }
 
@@ -97,24 +121,25 @@ if (options.h) {
     return
 }
 
-if(!options.i || !yamlUtil.isYamlFile(options.i.name)) {
+if (options.r) {
+    println "Running on recursive mode"
+}
+
+if(!options.i || !yamlProcessor.isYamlFile(options.i.name)) {
     println "You need to provide a valid YAML file path"
     cli.usage()
     return
 }
 
-File inputFile = options.i
-File outputFile = options.o ?: new File('output.yml')
 
-try {
-    println("Start processing ${inputFile.name} into ${outputFile.name}")
-    outputFile.withWriter('utf-8') { writer ->
-        inputFile.eachLine { line ->
-            writer.writeLine(yamlUtil.extractIncludeContent(line))
-        }
-    }
-    println("Finish processing file, results are in: ${outputFile.absolutePath}")
-} catch(RuntimeException e){
-    e.printStackTrace()
-    outputFile.delete()
+// Initialize processor and start merging files
+String parentDir = options.i.absoluteFile.parent
+
+yamlProcessor.with {
+    inputFile = options.i
+    outputFile = options.o ?: new File(parentDir, 'output.yml')
+    recursive = options.r
+    parent = parentDir
 }
+
+yamlProcessor.start()

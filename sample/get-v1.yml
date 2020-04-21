@@ -3,4 +3,4 @@
     operationId: listVersionsv2
     summary: List API versions
     responses:
-        $include: responses-get-v1.yml
+        $include: responses/responses-get-v1.yml
